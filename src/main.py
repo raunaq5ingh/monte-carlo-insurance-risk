@@ -1,14 +1,7 @@
-PREMIUM_LEVELS = [2000, 2500, 3000]
-
-SICKNESS_SCENARIOS = {
-    "low_risk": (0.01, 0.05),   # (young, old)
-    "high_risk": (0.02, 0.08)
-}
-
-NUM_SIMULATIONS = 5000
 
 import matplotlib.pyplot as plt
 import random
+
 random.seed(42)
 
 print("✅ Monte Carlo Insurance Simulation Started")
@@ -20,12 +13,21 @@ POPULATION_SIZE = 1000
 YEARS = 10
 NUM_SIMULATIONS = 5000
 CLAIM_AMOUNT = 10000
+
+INITIAL_WEALTH = 100000
+MAX_AFFORDABLE_PREMIUM = 4000
+
+LOW_RISK_SHARE = 0.7
+HIGH_RISK_SHARE = 0.3
+
 # -----------------------------
 # ETHICAL CONSTRAINTS
 # -----------------------------
-MAX_ACCEPTABLE_LOSS_PROB = 0.01   # insurer should fail in <1% scenarios
+MAX_ACCEPTABLE_LOSS_PROB = 0.01
 
-
+# -----------------------------
+# SCENARIOS
+# -----------------------------
 PREMIUM_LEVELS = [2000, 2500, 3000]
 
 SICKNESS_SCENARIOS = {
@@ -40,12 +42,20 @@ def run_monte_carlo(premium_per_person, sick_young, sick_old):
 
     profits = []
     burdens = []
+    utilities = []
 
     for sim in range(NUM_SIMULATIONS):
 
         ages = []
+        risk_types = []
+
         for i in range(POPULATION_SIZE):
             ages.append(random.randint(20, 60))
+
+            if random.random() < LOW_RISK_SHARE:
+                risk_types.append("low")
+            else:
+                risk_types.append("high")
 
         total_premiums = 0
         total_claims = 0
@@ -56,6 +66,7 @@ def run_monte_carlo(premium_per_person, sick_young, sick_old):
             total_premiums += yearly_premiums
 
             for i in range(POPULATION_SIZE):
+
                 ages[i] += 1
 
                 if ages[i] < 40:
@@ -63,8 +74,20 @@ def run_monte_carlo(premium_per_person, sick_young, sick_old):
                 else:
                     sickness_prob = sick_old
 
+                wealth = INITIAL_WEALTH - premium_per_person
+
                 if random.random() < sickness_prob:
-                    total_claims += CLAIM_AMOUNT
+
+                    if premium_per_person <= MAX_AFFORDABLE_PREMIUM:
+                        total_claims += CLAIM_AMOUNT
+                    else:
+                        wealth -= CLAIM_AMOUNT
+
+                if wealth < 0:
+                    wealth = 0
+
+                utility = wealth ** 0.5
+                utilities.append(utility)
 
         profit = total_premiums - total_claims
         profits.append(profit)
@@ -76,7 +99,7 @@ def run_monte_carlo(premium_per_person, sick_young, sick_old):
 
         burdens.append(burden)
 
-    return profits, burdens
+    return profits, burdens, utilities
 
 
 # -----------------------------
@@ -87,19 +110,17 @@ results = []
 for premium in PREMIUM_LEVELS:
     for risk_name, (sy, so) in SICKNESS_SCENARIOS.items():
 
-        profits, burdens = run_monte_carlo(premium, sy, so)
+        profits, burdens, utilities = run_monte_carlo(premium, sy, so)
 
         avg_profit = sum(profits) / len(profits)
         avg_burden = sum(burdens) / len(burdens)
+        avg_welfare = sum(utilities) / len(utilities)
 
         prob_loss = sum(1 for p in profits if p < 0) / len(profits)
 
         profits_sorted = sorted(profits)
         var_5 = profits_sorted[int(0.05 * len(profits))]
 
-        # -----------------------------
-        # ETHICAL METRICS
-        # -----------------------------
         ethically_viable = prob_loss <= MAX_ACCEPTABLE_LOSS_PROB
 
         avg_sickness_rate = (sy + so) / 2
@@ -114,8 +135,8 @@ for premium in PREMIUM_LEVELS:
             "VaR 5%": var_5,
             "Ethically Viable": ethically_viable,
             "Customer Burden": customer_burden,
-            "Avg Burden": avg_burden
-
+            "Avg Burden": avg_burden,
+            "Avg Welfare": avg_welfare
         })
 
         # Histogram
@@ -125,7 +146,10 @@ for premium in PREMIUM_LEVELS:
         plt.ylabel("Frequency")
         plt.savefig(f"results/profit_{premium}_{risk_name}.png", dpi=300)
         plt.clf()
+
+
 print("\n==== SENSITIVITY ANALYSIS RESULTS ====\n")
+
 for r in results:
     print("------------------------------------------------")
     print(f"Premium Level      : {r['Premium']}")
@@ -133,7 +157,12 @@ for r in results:
     print(f"Average Profit     : {int(r['Avg Profit'])}")
     print(f"Probability of Loss: {r['Prob Loss']:.2f}")
     print(f"VaR (Worst 5%)     : {int(r['VaR 5%'])}")
+    print(f"Average Welfare    : {r['Avg Welfare']:.2f}")
 
+
+# -----------------------------
+# PROFIT VS FAIRNESS GRAPH
+# -----------------------------
 profits_plot = []
 burdens_plot = []
 labels = []
@@ -154,5 +183,3 @@ plt.title("Profit vs Fairness Tradeoff in Insurance Design")
 plt.grid(True)
 plt.savefig("results/profit_vs_fairness.png", dpi=300)
 plt.show()
-
-
